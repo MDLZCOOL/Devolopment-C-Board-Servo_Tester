@@ -1,0 +1,25 @@
+#include "servo_test.h"
+
+uint8_t receiveData[128] = {0};
+
+void sendWelcomeInterface(){
+    printf("Welcome to Servo Test Prog\r\n");
+}
+
+int listenUsartCMD(){
+    HAL_UART_Receive_IT(&huart1, receiveData, 2);
+    return (int) receiveData - '0';
+}
+
+void initServoTest(){
+    HAL_TIM_Base_Start(&htim1);
+    HAL_TIM_PWM_Start(&htim1,TIM_CHANNEL_1);
+}
+
+int char2PWM(uint8_t angle){
+    return atoi(receiveData);
+}
+
+void rotateServo(int PWM){
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, PWM);
+}
