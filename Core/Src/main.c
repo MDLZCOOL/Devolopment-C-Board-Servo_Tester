@@ -337,20 +337,28 @@ int main(void) {
         ShowList();
         scanf("%s", optNumber);
         deterifHELP(optNumber);
-        if (atoi(optNumber) == 1) {
-            plain_servo_test(NO);
-        }
-        if (atoi(optNumber) == 2) {
-            interval_servo_test(NO);
-        }
-        if (atoi(optNumber) == 3) {
-            quick_servo_test(NO);
-        }
-        if (atoi(optNumber) == 4) {
-            use_multi_channels();
-        }
-        if (atoi(optNumber) == 5) {
-            use_direct_PWM();
+
+        int num = atoi(optNumber); // 首先将字符串转换为整数
+
+        switch (num) {
+            case 1:
+                plain_servo_test(NO);
+                break;
+            case 2:
+                interval_servo_test(NO);
+                break;
+            case 3:
+                quick_servo_test(NO);
+                break;
+            case 4:
+                use_multi_channels();
+                break;
+            case 5:
+                use_direct_PWM();
+                break;
+            default:
+                printf("Invalid option number: %s\n", optNumber);
+                break;
         }
         /* USER CODE END WHILE */
 
