@@ -115,7 +115,8 @@ void ShowList() {
     printf("\r\n1. Plain Servo Test\r\n"
            "\r\n2. Interval Servo Test\r\n"
            "\r\n3. Quick Servo Test\r\n"
-           "\r\n4. Use Multi Channels\r\n");
+           "\r\n4. Use Multi Channels\r\n"
+           "\r\n5. Direct Servo Test (PWM500-2500)\r\n");
     HAL_Delay(100);
     printf("\r\nYou can input \"help\" or \"HELP\" to get help\r\n");
 }
