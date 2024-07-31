@@ -83,7 +83,7 @@ void use_multi_channels();
 
 void use_direct_PWM();
 
-int deterifHELP(uint8_t *String);
+int deterifHELP(const uint8_t *String);
 
 void deterPWMChannel(uint8_t number[], int compare);
 
