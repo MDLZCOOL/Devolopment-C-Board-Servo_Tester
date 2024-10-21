@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "adc.h"
 #include "dma.h"
 #include "tim.h"
 #include "usart.h"
@@ -56,8 +57,10 @@ int angle = 0;
 uint8_t uint8_angle[128] = {0};
 uint8_t angle_lower[128] = {0};
 uint8_t angle_upper[128] = {0};
+uint8_t number_channels[1] = {0};
 int Compare = 0;
 uint8_t optNumber[50] = {0};
+volatile double voltage_vrefint_proportion = 8.0586080586080586080586080586081e-4f;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -66,21 +69,82 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 int trans2Compare(int a);
 
-void plain_servo_test();
+void plain_servo_test(int if_multi);
 
-void interval_servo_test();
+void interval_servo_test(int if_multi);
 
-void quick_servo_test();
+int rtnTIMCHANNEL(int num);
+
+void quick_servo_test(int if_multi);
 
 void ShowList();
 
-int deterifHELP(uint8_t *String);
+void use_multi_channels();
+
+void use_direct_PWM();
+
+int deterifHELP(const uint8_t *String);
+
+void deterPWMChannel(uint8_t number[], int compare);
+
+double get_battery_voltage(void);
+
+int init_vrefint_reciprocal(void);
+
+static uint16_t adcx_get_chx_value(ADC_HandleTypeDef *ADCx, uint32_t ch);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+static uint16_t adcx_get_chx_value(ADC_HandleTypeDef *ADCx, uint32_t ch) {
+    static ADC_ChannelConfTypeDef sConfig = {0};
+    sConfig.Channel = ch;
+    sConfig.Rank = 1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES; //ADC_SAMPLETIME_3CYCLES;
+    if (HAL_ADC_ConfigChannel(ADCx, &sConfig) != HAL_OK) {
+        Error_Handler();
+    }
+    HAL_ADC_Start(ADCx);
+    HAL_ADC_PollForConversion(ADCx, 10);
+    return (uint16_t) HAL_ADC_GetValue(ADCx);
+}
+
+int init_vrefint_reciprocal(void) {
+    uint8_t i = 0;
+    uint32_t total_adc = 0;
+    for (i = 0; i < 200; i++) {
+        total_adc += adcx_get_chx_value(&hadc1, ADC_CHANNEL_VREFINT);
+    }
+    voltage_vrefint_proportion = 200 * 1.2f / total_adc;
+    return 0;
+}
+
+double get_battery_voltage(void) {
+    double voltage;
+    uint16_t adcx = 0;
+    adcx = adcx_get_chx_value(&hadc3, ADC_CHANNEL_8);
+    //(22K Ω + 200K Ω)  / 22K Ω = 10.090909090909090909090909090909
+    voltage = (double) adcx * voltage_vrefint_proportion * 10.090909090909090909090909090909f;
+    return voltage;
+}
+
 int trans2Compare(int a) {
     return (a * 1.0f / 180) * (PWM_MAX - PWM_MIN) + PWM_MIN;
+}
+
+void use_direct_PWM() {
+    uint8_t uint8_PWM_value[1] = {0};
+    int int_PWM_value;
+    HAL_Delay(100);
+    printf("\r\nPlease input direct PWM value\r\n");
+    scanf("%s", uint8_PWM_value);
+    HAL_Delay(100);
+    int_PWM_value = atoi(uint8_PWM_value);
+    printf("Setting...");
+    HAL_Delay(100);
+    __HAL_TIM_SetCompare(&htim1, TIM_CHANNEL_1, int_PWM_value);
+    HAL_Delay(100);
+    printf("Set OK");
 }
 
 void ShowList() {
@@ -89,14 +153,16 @@ void ShowList() {
     HAL_Delay(100);
     printf("\r\nPlease select from below: \r\n");
     printf("\r\n1. Plain Servo Test\r\n"
-           "\r\n2. Interval Servo Test\r\n"
-           "\r\n3. Quick Servo Test\r\n"
-           "\r\n4. (If you want to test multiple servos, use this first)\r\n");
+        "\r\n2. Interval Servo Test\r\n"
+        "\r\n3. Quick Servo Test\r\n"
+        "\r\n4. Use Multi Channels\r\n"
+        "\r\n5. Direct Servo Test (PWM500-2500)\r\n");
     HAL_Delay(100);
     printf("\r\nYou can input \"help\" or \"HELP\" to get help\r\n");
+    printf("\r\nBattery voltage is %.2f\r\n", get_battery_voltage());
 }
 
-void plain_servo_test() {
+void plain_servo_test(int if_multi) {
     HAL_Delay(100);
     printf("\r\nPlease input your intended angle: \r\n");
     scanf("%s", uint8_angle);
@@ -105,14 +171,22 @@ void plain_servo_test() {
         if (angle > 180 || angle < 0) {
             printf("\r\nAngle is invalid, please check your input!\r\n");
             HAL_Delay(1000);
-            plain_servo_test();
+            if (NO == if_multi) {
+                plain_servo_test(NO);
+            } else {
+                plain_servo_test(YES);
+            }
         }
         HAL_Delay(100);
-        printf("\r\nAngle is %d °\r\n", angle);
+        printf("\r\nAngle is %d\r\n", angle);
         HAL_Delay(100);
         printf("\r\nSetting...\r\n");
         HAL_Delay(100);
-                __HAL_TIM_SetCompare(&htim1, TIM_CHANNEL_1, trans2Compare(angle));
+        if (NO == if_multi) {
+            __HAL_TIM_SetCompare(&htim1, TIM_CHANNEL_1, trans2Compare(angle));
+        } else {
+            deterPWMChannel(number_channels, trans2Compare(angle));
+        }
         printf("\r\nSet OK\r\n");
         HAL_Delay(100);
         printf("\r\nYou can input \"quit\" or \"QUIT\" to quit servo test or input angle to continue\r\n");
@@ -123,7 +197,33 @@ void plain_servo_test() {
     }
 }
 
-void interval_servo_test() {
+void use_multi_channels() {
+    HAL_Delay(100);
+    printf("\r\nPlease input the number of enabled channels\r\n");
+    scanf("%s", number_channels);
+    HAL_Delay(100);
+    printf("\r\nPlease select from below: \r\n");
+    printf("\r\n1. Plain Servo Test\r\n"
+        "\r\n2. Interval Servo Test\r\n"
+        "\r\n3. Quick Servo Test\r\n"
+        "\r\n4. Direct Servo Test (PWM500-2500)\r\n");
+    scanf("%s", optNumber);
+    HAL_Delay(100);
+    if (atoi(optNumber) == 1) {
+        plain_servo_test(YES);
+    }
+    if (atoi(optNumber) == 2) {
+        interval_servo_test(YES);
+    }
+    if (atoi(optNumber) == 3) {
+        quick_servo_test(YES);
+    }
+    if (atoi(optNumber) == 4) {
+        use_direct_PWM();
+    }
+}
+
+void interval_servo_test(int if_multi) {
     int int_angle_lower, int_angle_upper, angle_lower_compare, angle_upper_compare;
     HAL_Delay(100);
     printf("\r\nPlease input the lower, upper limits and step length of the angle: \r\n");
@@ -136,20 +236,32 @@ void interval_servo_test() {
               int_angle_lower <= int_angle_upper)) {
             printf("\r\nAngle is invalid, please check your input!\r\n");
             HAL_Delay(1000);
-            interval_servo_test();
+            if (NO == if_multi) {
+                interval_servo_test(NO);
+            } else {
+                interval_servo_test(YES);
+            }
         }
         angle_lower_compare = trans2Compare(int_angle_lower);
         angle_upper_compare = trans2Compare(int_angle_upper);
-                __HAL_TIM_SetCompare(&htim1, TIM_CHANNEL_1, angle_lower_compare);
+        if (NO == if_multi) {
+            __HAL_TIM_SetCompare(&htim1, TIM_CHANNEL_1, angle_lower_compare);
+        } else {
+            deterPWMChannel(number_channels, angle_lower_compare);
+        }
         HAL_Delay(100);
         printf("\r\nLower angle is %d °\r\n", int_angle_lower);
         printf("\r\nUpper angle is %d °\r\n", int_angle_upper);
-        HAL_Delay(100);
+        HAL_Delay(1000);
         printf("\r\nRotating...\r\n");
         HAL_Delay(200);
-        for (int i = angle_lower_compare; i < angle_upper_compare; i += 10) {
+        for (int i = angle_lower_compare; i < angle_upper_compare; i += 20) {
             HAL_Delay(10);
-                    __HAL_TIM_SetCompare(&htim1, TIM_CHANNEL_1, i);
+            if (NO == if_multi) {
+                __HAL_TIM_SetCompare(&htim1, TIM_CHANNEL_1, i);
+            } else {
+                deterPWMChannel(number_channels, i);
+            }
         }
         printf("\r\nRotate Finished\r\n");
         HAL_Delay(100);
@@ -162,13 +274,17 @@ void interval_servo_test() {
     }
 }
 
-void quick_servo_test() {
+void quick_servo_test(int if_multi) {
     HAL_Delay(100);
     printf("\r\nBegin quick servo test\r\n");
     HAL_Delay(100);
     for (int i = 500; i < 2500; i += 10) {
         HAL_Delay(10);
-                __HAL_TIM_SetCompare(&htim1, TIM_CHANNEL_1, i);
+        if (NO == if_multi) {
+            __HAL_TIM_SetCompare(&htim1, TIM_CHANNEL_1, i);
+        } else {
+            deterPWMChannel(number_channels, i);
+        }
     }
     HAL_Delay(100);
     printf("\r\nQuick servo test finish\r\n");
@@ -177,48 +293,42 @@ void quick_servo_test() {
     HAL_Delay(1000);
 }
 
-void deterPWMChannel(int a[]) {
-    for (int i = 0; i < sizeof(a); i++) {
-        switch(a[i]) {
-            case 1:
-                HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
-                break;
-            case 2:
-                HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
-                break;
-            case 3:
-                HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
-                break;
-            case 4:
-                HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
-                break;
-            case 5:
-                HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
-                break;
-            case 6:
-                HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_2);
-                break;
-            case 7:
-                HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_3);
-                break;
-            default:
-                // 处理未知通道编号的情况
-                break;
+int rtnTIMCHANNEL(int num) {
+    if (num == 1) {
+        return TIM_CHANNEL_1;
+    } else if (num == 2) {
+        return TIM_CHANNEL_2;
+    } else if (num == 3) {
+        return TIM_CHANNEL_3;
+    } else return TIM_CHANNEL_4;
+}
+
+void deterPWMChannel(uint8_t number[], int compare) {
+    int int_number = atoi(number);
+    if (int_number <= 4) {
+        for (int i = 1; i <= int_number; i++) {
+            __HAL_TIM_SetCompare(&htim1, rtnTIMCHANNEL(i), compare);
+        }
+    } else {
+        __HAL_TIM_SetCompare(&htim1, TIM_CHANNEL_ALL, compare);
+        for (int i = 1; i < int_number - 3; i++) {
+            __HAL_TIM_SetCompare(&htim8, rtnTIMCHANNEL(i), compare);
         }
     }
 }
 
-
-int deterifHELP(uint8_t *String) {
+int deterifHELP(const uint8_t *String) {
     if (NO == strcmp(String, "HELP") || NO == strcmp(String, "help")) {
         HAL_Delay(100);
         printf("\r\nAuthor: MDLZCOOL\r\n"
-               "\r\nWebsite: https://mdlzcool.github.io\r\n"
-               "\r\nEmail: mdlzcool@foxmail.com\r\n");
+            "\r\nWebsite: https://mdlzcool.github.io\r\n"
+            "\r\nEmail: mdlzcool@foxmail.com\r\n"
+            "\r\nGithub: https://github.com/MDLZCOOL/Devolopment-C-Board-Servo_Tester\r\n");
         HAL_Delay(1000);
         return YES;
     } else return NO;
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -241,6 +351,7 @@ int main(void) {
 
     /* Configure the system clock */
     SystemClock_Config();
+
     /* USER CODE BEGIN SysInit */
 
     /* USER CODE END SysInit */
@@ -250,9 +361,21 @@ int main(void) {
     MX_DMA_Init();
     MX_TIM1_Init();
     MX_USART1_UART_Init();
+    MX_TIM8_Init();
+    MX_ADC1_Init();
+    MX_ADC3_Init();
     /* USER CODE BEGIN 2 */
     HAL_TIM_Base_Start(&htim1);
+    HAL_TIM_Base_Start(&htim8);
+    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
+    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
+    HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_2);
+    HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_3);
     RetargetInit(&huart1);
+    init_vrefint_reciprocal();
     /* USER CODE END 2 */
 
     /* Infinite loop */
@@ -261,17 +384,28 @@ int main(void) {
         ShowList();
         scanf("%s", optNumber);
         deterifHELP(optNumber);
-        if (atoi(optNumber) == 1) {
-            plain_servo_test();
-        }
-        if (atoi(optNumber) == 2) {
-            interval_servo_test();
-        }
-        if (atoi(optNumber) == 3) {
-            quick_servo_test();
-        }
-        if (atoi(optNumber) == 4) {
-            quick_servo_test();
+
+        int num = atoi(optNumber); // 首先将字符串转换为整数
+
+        switch (num) {
+            case 1:
+                plain_servo_test(NO);
+                break;
+            case 2:
+                interval_servo_test(NO);
+                break;
+            case 3:
+                quick_servo_test(NO);
+                break;
+            case 4:
+                use_multi_channels();
+                break;
+            case 5:
+                use_direct_PWM();
+                break;
+            default:
+                printf("Invalid option number: %s\n", optNumber);
+                break;
         }
         /* USER CODE END WHILE */
 
